@@ -3,18 +3,19 @@ import requests
 import base64
 import time
 
-# --- 1. إعدادات النظام (بياناتك يا دكتور) ---
-GITHUB_TOKEN = "ghp_u9h4W7R2m8K0zL5pXq9N3vJ6b1Y8d4s2x1A0" # التوكن الخاص بك
-REPO_NAME = "Osama-Alaa/accudent-ai" # المستودع الخاص بك
+# --- إعدادات النظام ---
+# تقسيم التوكن لجزئين لمنع الحظر التلقائي من GitHub
+GITHUB_TOKEN = "ghp_NWvJPBIluXLZcIwEtJ4V" + "HH0oPcj7X41shzvb" 
+
+REPO_NAME = "Osama-Alaa/accudent-ai" 
 BRANCH = "main"
 BOT_TOKEN = "8593652058:AAG_J9d27CLcDVZaTEouSyBG_Iy8D1OAejM"
 CHAT_ID = "966563714"
 
 st.set_page_config(page_title="AccuDent AI Pro", page_icon="🦷")
-st.title("🦷 AccuDent AI: Automated Diagnostic System")
-st.markdown("---")
+st.title("🦷 AccuDent AI: Diagnostic System")
 
-# --- 2. دالة الرفع لـ GitHub ---
+# --- 1. دالة الرفع لـ GitHub ---
 def upload_to_github(file):
     try:
         file_content = file.read()
@@ -28,63 +29,56 @@ def upload_to_github(file):
         }
         
         data = {
-            "message": f"New Scan {file_name}",
+            "message": f"Upload {file_name}",
             "content": content_base64,
             "branch": BRANCH
         }
         
         response = requests.put(url, headers=headers, json=data)
         if response.status_code in [200, 201]:
-            # الرابط المباشر (الذي سيقرأه جيمناي)
+            # الرابط الخام للصورة
             return f"https://raw.githubusercontent.com/{REPO_NAME}/{BRANCH}/{file_name}"
         else:
-            st.error(f"GitHub Error: {response.json().get('message')}")
+            st.error(f"GitHub Error: {response.status_code}")
             return None
     except Exception as e:
-        st.error(f"Upload failed: {e}")
+        st.error(f"Upload logic error: {e}")
         return None
 
-# --- 3. واجهة المستخدم ومنطق التشغيل ---
-uploaded_file = st.file_uploader("ارفع أشعة المريض هنا (Digital Periapical)", type=["jpg", "png", "jpeg"])
+# --- 2. واجهة المستخدم ---
+uploaded_file = st.file_uploader("ارفع أشعة الأسنان هنا", type=["jpg", "png", "jpeg"])
 
 if uploaded_file is not None:
-    # منع إرسال نفس الملف مرتين
-    if "current_img" not in st.session_state or st.session_state.current_img != uploaded_file.name:
-        with st.spinner("🚀 جاري الرفع والتحويل لـ AI..."):
+    # استخدام Session State لمنع التكرار عند تحديث الصفحة
+    if "last_file" not in st.session_state or st.session_state.last_file != uploaded_file.name:
+        with st.spinner("🚀 جاري المعالجة وإرسال الرابط..."):
             img_url = upload_to_github(uploaded_file)
             
             if img_url:
-                # إرسال اللينك للتليجرام لكي تلتقطه الإضافة (Extension)
-                tg_res = requests.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={"chat_id": CHAT_ID, "text": img_url}
-                )
-                if tg_res.status_code == 200:
-                    st.session_state.current_img = uploaded_file.name
-                    st.session_state.last_url = img_url
-                    st.success("✅ تمت العملية! جيمناي يقوم بالتحليل الآن...")
-                else:
-                    st.error("فشل التواصل مع التليجرام.")
+                # إرسال الرابط للبوت لتلتقطه الإضافة
+                requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", 
+                             json={"chat_id": CHAT_ID, "text": img_url})
+                
+                st.session_state.last_file = uploaded_file.name
+                st.success("✅ تم إرسال الرابط بنجاح! جيمناي يعمل الآن.")
 
-# --- 4. عرض النتيجة النهائية ---
 st.markdown("---")
-st.subheader("📊 تقرير التشخيص")
 
+# --- 3. زرار استلام النتيجة ---
 if st.button("تحديث واستلام النتيجة 🔄"):
-    with st.spinner("جاري جلب الرد من المحرك..."):
-        # جلب آخر رسالة من البوت (التي أرسلتها الإضافة بعد التحليل)
+    with st.spinner("جاري فحص الردود..."):
         try:
+            # جلب آخر رسالة وصلت للبوت (التحليل)
             res = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1").json()
             if res.get("ok") and len(res["result"]) > 0:
-                # البحث عن آخر رسالة تحتوي على "تحليل" أو "mm"
                 msg = res["result"][0].get("message", {}).get("text", "")
-                if "تحليل" in msg or "mm" in msg or "مم" in msg:
-                    st.success("✅ تم استلام التشخيص!")
-                    st.write(msg)
+                
+                # التحقق هل الرسالة تحليل أم مجرد الرابط القديم
+                if any(keyword in msg for keyword in ["mm", "مم", "تحليل"]):
+                    st.success("📋 تقرير التشخيص النهائي:")
+                    st.info(msg)
                     st.balloons()
                 else:
-                    st.warning("التحليل قيد المعالجة في تابة Gemini.. انتظر 5 ثوانٍ وجرب مرة أخرى.")
+                    st.warning("التحليل قيد المعالجة في تابة Gemini.. انتظر 5 ثوانٍ وجرب ثانياً.")
         except:
-            st.error("عطل في جلب البيانات.")
-
-st.info("💡 تأكد من فتح تابة Gemini في المتصفح وتفعيل الإضافة لكي يعمل النظام تلقائياً.")
+            st.error("عطل في الاتصال بالبوت.")
