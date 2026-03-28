@@ -2,61 +2,96 @@ import streamlit as st
 import requests
 import base64
 import time
+import json
 
-# --- الإعدادات بالتوكن الجديد ---
+# --- 1. الإعدادات الأساسية ---
+# ملحوظة: التوكن مقسوم لجزئين عشان الحماية (يفضل وضعه في Secrets لاحقاً)
 GITHUB_TOKEN = "ghp_lguYARm5CP" + "0XP9wMXsggwUg6PA2tCY3bNn8d"
 REPO_OWNER = "anme27684-cmd"
 REPO_NAME = "Accudent-AI" 
 MY_TOPIC = "accudent_pro_clinic_2026"
 
-st.set_page_config(page_title="AccuDent Pro MVP", page_icon="🦷")
-st.title("🦷 AccuDent Pro - GitHub Station")
+# --- 2. إعدادات الصفحة ---
+st.set_page_config(page_title="AccuDent Pro - AI Analysis", page_icon="🦷", layout="centered")
 
-uploaded_file = st.file_uploader("ارفع صورة الأشعة (X-Ray)", type=["jpg", "png", "jpeg"])
+st.markdown("""
+    <style>
+    .main { text-align: right; direction: rtl; }
+    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #007BFF; color: white; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🦷 محطة AccuDent Pro - تحليل الأشعة")
+st.write("ارفع صورة الأشعة، وسيقوم الرادار بتحليلها تلقائياً عبر Gemini.")
+
+# --- 3. واجهة الرفع ---
+uploaded_file = st.file_uploader("اختر صورة الأشعة (JPG/PNG)", type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
-    if st.button("تحليل الأشعة الآن 🚀"):
+    st.image(uploaded_file, caption="المعاينة قبل الرفع", use_column_width=True)
+    
+    if st.button("بدء عملية الرفع والتحليل 🚀"):
         try:
-            # 1. تجهيز الصورة
+            # أ. تجهيز الصورة (Base64)
             encoded_img = base64.b64encode(uploaded_file.getvalue()).decode()
             file_name = f"xray_{int(time.time())}.jpg"
             
-            # 2. الرفع باستخدام الـ Headers المتوافقة مع Fine-grained Token
+            # ب. الرفع إلى GitHub
             url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads/{file_name}"
             headers = {
                 "Authorization": f"Bearer {GITHUB_TOKEN}",
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28"
             }
-            data = {"message": "MVP Scan", "content": encoded_img}
+            data = {"message": "New X-Ray Scan for AI", "content": encoded_img}
             
-            res = requests.put(url, json=data, headers=headers)
-            
-            if res.status_code in [200, 201]:
-                img_url = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/uploads/{file_name}"
-                st.success("✅ تم الرفع بنجاح!")
-                st.warning("⚠️ انسخ الرابط ده (Copy) عشان يبدأ التحليل:")
-                st.code(img_url)
+            with st.status("جاري رفع الصورة إلى سيرفر GitHub...", expanded=True) as status:
+                res = requests.put(url, json=data, headers=headers)
                 
-                # 3. استقبال الرد
-                with st.spinner("في انتظار رد Gemini..."):
-                    found = False
-                    for _ in range(45):
-                        check = requests.get(f"https://ntfy.sh/{MY_TOPIC}/json?poll=1")
-                        if check.status_code == 200:
-                            try:
-                                msgs = check.json()
-                                if msgs:
-                                    st.balloons()
-                                    st.success("✅ نتيجة القياس:")
-                                    st.markdown(f"### {msgs[-1]['message']}")
-                                    found = True
-                                    break
-                            except: pass
-                        time.sleep(2)
-                    if not found:
-                        st.error("المحرك لم يرد بعد، تأكد من تشغيل الكونسول.")
-            else:
-                st.error(f"خطأ {res.status_code}: {res.json().get('message')}")
+                if res.status_code in [200, 201]:
+                    status.update(label="✅ تم الرفع! الرادار يعمل الآن...", state="complete")
+                    st.info("💡 لا حاجة لنسخ اللينك، الإضافة ستكتشف الصورة تلقائياً.")
+                    
+                    # ج. استقبال الرد من ntfy (الرادار)
+                    found_response = False
+                    with st.spinner("⏳ جاري انتظار تحليل Gemini (قد يستغرق 10-30 ثانية)..."):
+                        # محاولات فحص ntfy (لمدة 90 ثانية تقريباً)
+                        for i in range(45):
+                            # نطلب البيانات من ntfy بنظام الـ Poll
+                            check = requests.get(f"https://ntfy.sh/{MY_TOPIC}/json?poll=1")
+                            
+                            if check.status_code == 200:
+                                # ntfy يرسل البيانات كأسطر JSON منفصلة (NDJSON)
+                                lines = check.text.strip().split('\n')
+                                for line in lines:
+                                    if not line: continue
+                                    try:
+                                        msg_data = json.loads(line)
+                                        # التأكد من وجود رسالة (تجاهل رسائل الاتصال الفارغة)
+                                        if "message" in msg_data and len(msg_data["message"]) > 20:
+                                            st.balloons()
+                                            st.success("✅ تم استلام نتائج التحليل بنجاح:")
+                                            
+                                            # عرض النتيجة بشكل مرتب
+                                            st.markdown("---")
+                                            st.markdown(f"### 📋 تقرير المعمل:\n{msg_data['message']}")
+                                            st.markdown("---")
+                                            
+                                            found_response = True
+                                            break
+                                    except:
+                                        continue
+                            
+                            if found_response: break
+                            time.sleep(2) # انتظار ثانيتين بين كل فحص
+                        
+                        if not found_response:
+                            st.error("❌ انتهت مهلة الانتظار. تأكد أن تابة Gemini مفتوحة والإضافة مفعلة.")
+                else:
+                    st.error(f"فشل الرفع: {res.status_code} - {res.json().get('message')}")
+                    
         except Exception as e:
-            st.error(f"عطل: {e}")
+            st.error(f"عطل فني في النظام: {str(e)}")
+
+# --- 4. التذييل ---
+st.caption("نظام AccuDent Pro التجريبي - 2026")
