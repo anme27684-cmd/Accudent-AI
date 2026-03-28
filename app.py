@@ -1,23 +1,31 @@
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+import numpy as np
+import cv2
+import io
 
 # 1. إعداد الصفحة
-st.set_page_config(page_title="Accudent AI - Measurements", page_icon="🦷", layout="centered")
-st.title("🦷 Accudent AI: Smart Diagnostics & Measurements")
+st.set_page_config(page_title="Accudent AI - Precision Measurement", page_icon="🦷", layout="centered")
+st.title("🦷 Accudent AI: Precision Measurement Tool")
 
 # 2. إدخال المفتاح (في الجنب)
 api_key = st.sidebar.text_input("Enter Gemini API Key:", type="password")
 
 # 3. ثابت المعايرة (Scale Definition)
-# هذا السطر ثابت في الكود لإخبار النموذج بالقيمة الحقيقية بين الخطوط
 MM_PER_LINE_GAP = 1.8
+
+# دالة لتحويل صورة Streamlit لصورة OpenCV
+def load_image_cv2(uploaded_file):
+    image_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
+    image_cv2 = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+    return image_cv2
 
 if api_key:
     try:
         genai.configure(api_key=api_key)
         
-        # كود البحث عن الموديل المتاح تلقائياً (كما في الحل السابق)
+        # كود البحث عن الموديل المتاح تلقائياً
         available_model_name = None
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
@@ -36,65 +44,94 @@ if api_key:
         uploaded_file = st.file_uploader("ارفع صورة الأشعة (JPG, PNG)", type=["jpg", "jpeg", "png"])
 
         if uploaded_file:
-            image = Image.open(uploaded_file).convert("RGB")
-            st.image(image, caption="الأشعة المرفوعة", use_container_width=True)
+            # عرض الصورة في Streamlit
+            st.image(uploaded_file, caption="الأشعة المرفوعة", use_container_width=True)
 
             # ---------------------------------------------------------
-            # 🆕 الميزة الجديدة: خانة إدخال للدكتور لتحديد نقاط القياس 🆕
+            # الحل الجذري: كود اكتشاف النقاط والمعايرة الرياضية
             # ---------------------------------------------------------
-            st.markdown("---")
-            st.subheader("📍 طلب القياس المخصص (اختياري)")
-            st.write("اكتب هنا نقاط القياس التي تريدها بالظبط (مثال: قس لي من حدبة السن (Cusp) إلى ذروة الجذر (Apex) لقناة MB)")
-            
-            # الدكتور بيكتب هنا
-            user_measurement_request = st.text_input("ادخل طلب القياس الخاص بك:")
-
-            # ---------------------------------------------------------
-
-            if st.button("بدء التحليل والقياس ✨"):
-                with st.spinner("جاري التحليل والقياس بالأرقام..."):
+            if st.button("بدء القياس الدقيق ✨"):
+                with st.spinner("جاري التواصل مع الذكاء الاصطناعي لاكتشاف النقاط..."):
                     
-                    # 5. بناء الـ Prompt الجديد والدقيق جداً (The Core Solution)
-                    
-                    # أمر المعايرة (Calibration Prompt) - ثابت
-                    calibration_instruction = f"""
-                    You are an expert dental radiologist. First, identify the calibration grid lines present in the image (if any). The vertical distance between adjacent horizontal lines is exactly {MM_PER_LINE_GAP}mm. Perform pixel-to-mm calibration based on this fact.
+                    # 5. الـ Prompt الذكي لاكتشاف إحداثيات النقاط
+                    # إحنا بنطلب من الموديل بس يحدد مكان الحاجات، مش يقيسها
+                    detection_prompt = f"""
+                    You are an expert dental radiologist. Your task is to identify key coordinates in this image.
+                    Analyze the image and provide the (x, y) pixel coordinates for:
+                    1. A point on any horizontal calibration line.
+                    2. A point on the *adjacent* horizontal calibration line below or above it.
+                    3. The exact position of the K-file stopper.
+                    4. The apex of the root canal for the tooth shown.
+                    Provide the output in this strict JSON format:
+                    {{
+                        "calibration_point_1": [x, y],
+                        "calibration_point_2": [x, y],
+                        "file_stopper": [x, y],
+                        "apex": [x, y]
+                    }}
+                    Only output the JSON.
                     """
                     
-                    # أمر التحليل الطبي - ثابت
-                    clinical_instruction = """
-                    Provide a concise clinical analysis: visible teeth, roots, caries, or lesions.
-                    """
+                    # إرسال الصورة للموديل (نحتاج لنسخة جديدة من الصورة لأن st.image تستهلكها)
+                    uploaded_file.seek(0)
+                    image_for_genai = Image.open(uploaded_file).convert("RGB")
+                    response = model.generate_content([detection_prompt, image_for_genai])
                     
-                    # أمر القياس (Dynamic Measurement Prompt) - ديناميكي بناءً على طلب الدكتور
-                    if user_measurement_request:
-                        # لو الدكتور كتب حاجة، نستخدمها هي
-                        measurement_instruction = f"""
-                        Second, perform the following dynamic measurement as requested: "{user_measurement_request}". Report the final measurement in MM (Millimeters).
-                        """
-                    else:
-                        # لو مكتبش، نعمل قياس افتراضي
-                        measurement_prompt = "- Specific Task: Provide full tooth length from occlusal surface to apex."
-                        measurement_instruction = f"""
-                        Second, if no specific request is provided, provide a general estimate of the full tooth length (Occlusal to Apex) in MM (Millimeters).
-                        """
+                    # 6. معالجة الرد واستخراج الإحداثيات (JSON parsing)
+                    # هذا الجزء يحتاج لمعالجة دقيقة لرد الموديل للتأكد من أنه JSON صالح
+                    try:
+                        import json
+                        import re
+                        # تنظيف الرد من أي علامات اقتباس أو كلام إضافي
+                        clean_response = re.search(r'\{.*\}', response.text, re.DOTALL).group(0)
+                        coords = json.loads(clean_response)
                         
-                    # تجميع الأمر النهائي
-                    final_prompt = [
-                        calibration_instruction,
-                        clinical_instruction,
-                        measurement_instruction,
-                        "\nProvide the output in English, but the response text itself should be easily understandable by an Arabic-speaking dentist.",
-                        image
-                    ]
-                    
-                    # إرسال الصورة للموديل
-                    response = model.generate_content(final_prompt)
-                    
-                    st.success("تم التحليل بنجاح!")
-                    
-                    # عرض التقرير والقياس
-                    st.markdown(response.text)
+                        # تحميل الصورة في OpenCV للقياس الرياضي
+                        uploaded_file.seek(0)
+                        image_cv2 = load_image_cv2(uploaded_file)
+                        
+                        # 7. الحساب الرياضي للمعايرة (Calibration)
+                        # حساب المسافة بين نقطتي المعايرة (بالبيكسل)
+                        p1 = np.array(coords["calibration_point_1"])
+                        p2 = np.array(coords["calibration_point_2"])
+                        pixels_between_lines = np.linalg.norm(p1 - p2)
+                        
+                        # حساب الـ Scale (Pixels per MM)
+                        pixels_per_mm = pixels_between_lines / MM_PER_LINE_GAP
+                        
+                        st.write(f"📊 تم حساب المعايرة: {pixels_per_mm:.2f} pixels/mm")
+                        
+                        # 8. الحساب الرياضي للقياس النهائي
+                        # حساب المسافة بين الـ Stopper والـ Apex (بالبيكسل)
+                        stopper_p = np.array(coords["file_stopper"])
+                        apex_p = np.array(coords["apex"])
+                        pixels_file_length = np.linalg.norm(stopper_p - apex_p)
+                        
+                        # تحويل المسافة لملم
+                        final_length_mm = pixels_file_length / pixels_per_mm
+                        
+                        # 9. عرض النتيجة النهائية
+                        st.markdown("---")
+                        st.subheader("🎉 النتيجة النهائية للقياس الدقيق:")
+                        st.success(f"📏 طول القناة المقاس: **{final_length_mm:.1f} mm**")
+                        
+                        # رسم النقاط على الصورة (اختياري، للتأكد من صحة الاكتشاف)
+                        cv2.circle(image_cv2, tuple(p1), 10, (0, 255, 0), -1)
+                        cv2.circle(image_cv2, tuple(p2), 10, (0, 255, 0), -1)
+                        cv2.circle(image_cv2, tuple(stopper_p), 10, (0, 0, 255), -1)
+                        cv2.circle(image_cv2, tuple(apex_p), 10, (255, 0, 0), -1)
+                        # عرض الصورة المرسوم عليها في Streamlit
+                        uploaded_file.seek(0)
+                        image_with_points = Image.open(uploaded_file).convert("RGB")
+                        # (ملاحظة: OpenCV تستخدم BGR، PIL تستخدم RGB، نحتاج للتحويل لو رسمنا على OpenCV image)
+                        
+                        st.write("📊 النقاط المكتشفة (للتأكد): أخضر (معايرة)، أحمر (Stopper)، أزرق (Apex)")
+                        
+                    except Exception as json_e:
+                        st.error("❌ فشل الذكاء الاصطناعي في تحديد النقاط بدقة، حاول مرة أخرى.")
+                        st.code(str(json_e))
+                        st.write("رد الموديل (للتصحيح):")
+                        st.write(response.text)
 
     except Exception as e:
         st.error("❌ حدث خطأ:")
