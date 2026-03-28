@@ -7,8 +7,8 @@ import time
 # تقسيم التوكن للحماية من روبوتات جيت هاب
 token_part1 = "ghp_NWvJPBIluXLZ"
 token_part2 = "IwEtJ4VHH0oPcj7X41shzvb"
-GITHUB_TOKEN = token_part1 + token_part2
-
+# بدل ما نكتب التوكن هنا، بنقوله هاته من الخزنة (Secrets)
+GITHUB_TOKEN = st.secrets["G_TOKEN"]
 # البيانات المستخرجة من الرابط اللي بعته
 REPO_NAME = "anme27684-cmd/Accudent-AI" 
 BRANCH = "main"
