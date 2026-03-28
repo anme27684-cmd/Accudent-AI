@@ -28,7 +28,7 @@ if api_key:
         genai.configure(api_key=api_key)
         
         # استخدام العقل المدبر (Pro) لضمان الدقة الهندسية
-        model = genai.GenerativeModel("gemini-1.5-pro")
+        model = genai.GenerativeModel("gemini-1.5-pro-latest")
 
         # 4. واجهة رفع الأشعة
         uploaded_file = st.file_uploader("📂 ارفع صورة الأشعة (JPG/PNG)", type=["jpg", "jpeg", "png"])
