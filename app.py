@@ -3,59 +3,57 @@ import requests
 import base64
 import time
 
-# --- الإعدادات الثابتة (تأكد من الحروف الكبيرة والصغيرة) ---
-GITHUB_TOKEN = "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"
+# --- الإعدادات النهائية (التوكن الكلاسيكي) ---
+GITHUB_TOKEN = "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"
 REPO_OWNER = "anme27684-cmd"
 REPO_NAME = "Accudent-AI" 
 MY_TOPIC = "accudent_pro_clinic_2026"
 
-st.set_page_config(page_title="AccuDent Pro", page_icon="🦷")
-st.title("🦷 AccuDent Pro - GitHub Station")
+st.set_page_config(page_title="AccuDent Pro MVP", page_icon="🦷")
+st.title("🦷 AccuDent Pro - Professional Station")
 
 uploaded_file = st.file_uploader("ارفع صورة الأشعة (X-Ray)", type=["jpg", "png", "jpeg"])
 
 if uploaded_file:
-    if st.button("بدء الرفع والتحليل التلقائي 🚀"):
+    if st.button("تحليل الأشعة الآن 🚀"):
         try:
-            # 1. تحويل الصورة لكود نصي
+            # 1. تجهيز الصورة
             encoded_img = base64.b64encode(uploaded_file.getvalue()).decode()
             file_name = f"xray_{int(time.time())}.jpg"
             
-            # 2. الرفع لـ GitHub مع الـ Headers الصحيحة لتجنب 401
+            # 2. الرفع باستخدام Classic Token Headers
             url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads/{file_name}"
             headers = {
-                "Authorization": f"Bearer {GITHUB_TOKEN}", # تم تغيير token لـ Bearer للتوكنات الجديدة
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28"
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
             }
-            data = {"message": "Upload via App", "content": encoded_img}
+            data = {"message": "MVP Scan", "content": encoded_img}
             
             res = requests.put(url, json=data, headers=headers)
             
             if res.status_code in [200, 201]:
                 img_url = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/uploads/{file_name}"
-                st.success("✅ تم الرفع بنجاح!")
-                st.warning("⚠️ انسخ الرابط ده الآن (كليك يمين و Copy):")
+                st.success("✅ تم الرفع للخزنة بنجاح!")
+                st.warning("⚠️ انسخ الرابط ده (Copy) عشان يبدأ التحليل:")
                 st.code(img_url)
                 
-                # 3. الانتظار لسماع الرد
-                with st.spinner("جاري انتظار تحليل Gemini..."):
+                # 3. استقبال الرد من ntfy
+                with st.spinner("في انتظار رد المحرك الذكي..."):
                     found = False
-                    for _ in range(40):
+                    for _ in range(45):
                         check = requests.get(f"https://ntfy.sh/{MY_TOPIC}/json?poll=1")
                         if check.status_code == 200 and check.text:
                             msgs = check.json()
                             if msgs:
                                 st.balloons()
-                                st.success("✅ نتيجة القياس وصلت:")
-                                st.info(msgs[-1]['message'])
+                                st.success("✅ تم القياس بنجاح:")
+                                st.markdown(f"### {msgs[-1]['message']}")
                                 found = True
                                 break
                         time.sleep(2)
                     if not found:
-                        st.error("المحرك لم يرد، تأكد أن تابة Gemini مفتوحة والكونسول يعمل.")
+                        st.error("تأكد أن تابة Gemini مفتوحة والكونسول شغال.")
             else:
-                st.error(f"فشل الرفع. كود الخطأ: {res.status_code}")
-                st.write("رد السيرفر:", res.text) # عشان نعرف السبب لو استمرت المشكلة
+                st.error(f"خطأ {res.status_code}: {res.json().get('message')}")
         except Exception as e:
-            st.error(f"عطل فني: {e}")
+            st.error(f"عطل: {e}")
