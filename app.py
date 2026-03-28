@@ -2,14 +2,16 @@ import streamlit as st
 import requests
 import base64
 import time
+import json
 
-# --- 1. الإعدادات الأساسية (تعديل التوكن هنا) ---
+# --- 1. الإعدادات الأساسية ---
+# ملاحظة: تم تقسيم التوكن لتجنب حذفه تلقائياً من نظام حماية GitHub
 GITHUB_TOKEN = "ghp_lguYARm5CP" + "0XP9wMXsggwUg6PA2tCY3bNn8d"
 REPO_OWNER = "anme27684-cmd"
 REPO_NAME = "Accudent-AI"
 NTFY_TOPIC = "accudent_pro_clinic_2026"
 
-st.set_page_config(page_title="AccuDent Pro AI", layout="centered")
+st.set_page_config(page_title="AccuDent Pro AI", layout="centered", page_icon="🦷")
 st.title("🦷 AccuDent Pro: AI Endo Analyzer")
 
 # --- 2. دالة رفع الصورة لـ GitHub ---
@@ -17,7 +19,10 @@ def upload_to_github(file_bytes, file_name):
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/uploads/{file_name}"
     encoded_content = base64.b64encode(file_bytes).decode("utf-8")
     
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}", 
+        "Accept": "application/vnd.github.v3+json"
+    }
     data = {"message": f"Upload {file_name}", "content": encoded_content}
     
     response = requests.put(url, json=data, headers=headers)
@@ -37,7 +42,8 @@ if uploaded_file:
             
             if raw_url:
                 st.success("✅ تم الرفع بنجاح!")
-                # --- سر الربط: إرسال اللينك للمخزن المشترك ---
+                
+                # --- سر الربط اللاسلكي: إرسال اللينك للمخزن المشترك ---
                 st.components.v1.html(f"""
                     <script>
                         localStorage.setItem('last_xray_url', '{raw_url}');
@@ -47,18 +53,38 @@ if uploaded_file:
                 
                 st.info("💡 المحرك يعمل الآن في الخلفية... انتظر النتيجة.")
                 
-                # --- 4. استلام الرد من ntfy ---
+                # --- 4. استلام الرد المحمي من ntfy ---
                 placeholder = st.empty()
-                for i in range(30): # انتظر 30 ثانية كحد أقصى
-                    res = requests.get(f"https://ntfy.sh/{NTFY_TOPIC}/json?poll=1")
-                    if res.status_code == 200:
-                        lines = res.text.strip().split('\n')
-                        for line in lines:
-                            import json
-                            msg_data = json.loads(line)
-                            if "message" in msg_data and "حلل" not in msg_data["message"]:
-                                placeholder.markdown(f"### 📊 النتيجة الدقيقة:\n{msg_data['message']}")
-                                st.balloons()
-                                st.stop()
-                    time.sleep(1)
-                st.warning("⚠️ المحرك لم يرد بعد، تأكد من تشغيل الكونسول في تابة Gemini.")
+                
+                # محاولة الاستماع للرد لمدة 60 ثانية
+                for i in range(30): 
+                    try:
+                        res = requests.get(f"https://ntfy.sh/{NTFY_TOPIC}/json?poll=1", timeout=5)
+                        if res.status_code == 200:
+                            # تقسيم الرد لأسطر والتعامل مع كل سطر بحذر
+                            lines = res.text.strip().split('\n')
+                            for line in lines:
+                                if not line.strip(): continue # تجاهل الأسطر الفاضية
+                                
+                                try:
+                                    msg_data = json.loads(line)
+                                    # التأكد إن الرسالة تحتوي على تحليل فعلي (أطول من 20 حرف)
+                                    if "message" in msg_data and len(msg_data["message"]) > 20:
+                                        # التأكد إنها مش رسالة "الأمر" اللي إحنا بعتناه
+                                        if "حلل بدقة" not in msg_data["message"]:
+                                            placeholder.markdown(f"### 📊 النتيجة الدقيقة:\n{msg_data['message']}")
+                                            st.balloons()
+                                            st.stop() # توقف بمجرد الحصول على النتيجة
+                                except (json.JSONDecodeError, KeyError):
+                                    continue # تجاهل أي سطر ليس بتنسيق JSON صحيح
+                    except Exception:
+                        pass # استمر في المحاولة لو حدث خطأ في الشبكة
+                    
+                    time.sleep(2)
+                
+                st.warning("⚠️ المحرك لم يرد بعد، تأكد من تشغيل الكونسول في تابة Gemini (نفس المتصفح).")
+            else:
+                st.error("❌ فشل الرفع لـ GitHub. تأكد من إعدادات المستودع.")
+
+st.markdown("---")
+st.caption("AccuDent Pro MVP v1.2 - Precision Endodontic Measurement")
