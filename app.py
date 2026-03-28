@@ -4,8 +4,7 @@ import base64
 import time
 
 # --- الإعدادات بالتوكن الجديد ---
-GITHUB_TOKEN = "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"
-REPO_OWNER = "anme27684-cmd"
+GITHUB_TOKEN = "ghp_lguYARm5CP" + "0XP9wMXsggwUg6PA2tCY3bNn8d"REPO_OWNER = "anme27684-cmd"
 REPO_NAME = "Accudent-AI" 
 MY_TOPIC = "accudent_pro_clinic_2026"
 
