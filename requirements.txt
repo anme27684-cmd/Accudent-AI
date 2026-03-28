@@ -1,4 +1,5 @@
 streamlit
-google-generativeai
 Pillow
+numpy
 opencv-python-headless
+streamlit-image-coordinates
